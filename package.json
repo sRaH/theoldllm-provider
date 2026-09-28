@@ -1,0 +1,56 @@
+{
+  "name": "@srah/theoldllm-provider",
+  "version": "0.1.0",
+  "description": "OpenCode v2 provider plugin for TheOldLLM's OpenAI-compatible API — model metadata, cost multipliers, reasoning variants, and daily quota tracking",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "opencode-provider",
+    "provider",
+    "llm",
+    "ai",
+    "theoldllm",
+    "openai-compatible"
+  ],
+  "homepage": "https://github.com/sRaH/theoldllm-provider#readme",
+  "bugs": {
+    "url": "https://github.com/sRaH/theoldllm-provider/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sRaH/theoldllm-provider.git"
+  },
+  "license": "MIT",
+  "author": "sRaH",
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "esbuild index.ts --bundle --format=esm --platform=node --target=es2022 --external:@opencode/plugin --outfile=dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "verify": "node -e \"import('./dist/index.js').then((m) => { const p = m.default; if (p?.id !== 'theoldllm.provider' || typeof p?.setup !== 'function') throw new Error('bad plugin shape'); console.log('plugin ok:', p.id) })\"",
+    "prepublishOnly": "npm run typecheck && npm run build && npm run verify"
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.0.18"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

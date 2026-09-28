@@ -1,0 +1,69 @@
+name: Publish
+
+# Pushing a `v*` tag releases to npm and attaches a built .zip to a GitHub
+# Release. The tag must match `version` in package.json — the job fails
+# otherwise rather than publishing a mislabelled package.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NPM_PROVENANCE: ${{ github.repository_owner == 'sRaH' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check tag matches package version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Tag v$tag does not match package.json version $version"
+            exit 1
+          fi
+          echo "Releasing $version"
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify plugin shape
+        run: npm run verify
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Build release archive
+        run: |
+          name="theoldllm-provider-${GITHUB_REF_NAME}.zip"
+          zip -r "$name" dist package.json README.md LICENSE
+          echo "ASSET=$name" >> "$GITHUB_ENV"
+
+      - name: Create GitHub Release
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$ASSET" \
+            --title "v${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+            --verify-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
