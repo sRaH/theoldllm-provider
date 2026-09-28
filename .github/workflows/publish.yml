@@ -1,8 +1,14 @@
 name: Publish
 
 # Pushing a `v*` tag publishes to both registries and attaches a built .zip to a
-# GitHub Release. The tag must match `version` in package.json — the job fails
-# otherwise rather than publishing a mislabelled package.
+# GitHub Release. The tag must match `version` in package.json — the publish jobs
+# fail otherwise rather than publishing a mislabelled package.
+#
+# The two registries publish as INDEPENDENT jobs on purpose. They were a single
+# sequential job before, and a failure in the npmjs step silently cancelled the
+# GitHub Packages step, which is how the repo ended up with no packages at all.
+# Now one registry's failure cannot block the other; the release job still runs
+# when at least one of them succeeded.
 #
 # npmjs.com uses npm Trusted Publishing (OIDC). There is no npm token anywhere in
 # this workflow: npm CLI detects the OIDC environment and exchanges a short-lived
@@ -12,21 +18,20 @@ name: Publish
 # The package is published under two different scopes, one per registry:
 #   npmjs.com             @srah_x64/theoldllm-provider
 #   GitHub Packages       @srah/theoldllm-provider
-# The name is rewritten between the two publishes; nothing else differs.
+# The name is rewritten in the GitHub Packages job only.
 
 on:
   push:
     tags: ["v*"]
 
-permissions:
-  contents: write
-  packages: write
-  id-token: write
-
 jobs:
-  publish:
+  publish-npm:
+    name: npmjs.com (OIDC)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -39,7 +44,6 @@ jobs:
 
       - name: Check npm supports OIDC
         run: |
-          node --version
           npm --version
           node -e '
             const [major, minor] = require("child_process").execSync("npm --version").toString().trim().split(".").map(Number);
@@ -59,30 +63,43 @@ jobs:
             echo "::error::Tag v$tag does not match package.json version $version"
             exit 1
           fi
-          echo "Releasing $version"
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Build
-        run: npm run build
-
-      - name: Verify plugin shape
-        run: npm run verify
-
-      # Packed before the GitHub Packages rename below, so the archive carries
-      # the canonical npmjs name rather than the @srah one.
-      - name: Build release archive
-        run: |
-          name="theoldllm-provider-${GITHUB_REF_NAME}.zip"
-          zip -r "$name" dist package.json README.md LICENSE
-          echo "ASSET=$name" >> "$GITHUB_ENV"
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run verify
 
       # Authenticates by OIDC. No token is read from secrets or written to .npmrc.
-      - name: Publish to npm
+      - name: Publish
         run: npm publish --access public
 
-      - name: Publish to GitHub Packages
+  publish-gh:
+    name: GitHub Packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: npm ci
+
+      - name: Check tag matches package version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Tag v$tag does not match package.json version $version"
+            exit 1
+          fi
+
+      - run: npm run build
+
+      - name: Rename to the GitHub Packages scope
         run: |
           node -e '
             const fs = require("fs");
@@ -91,12 +108,57 @@ jobs:
             pkg.publishConfig = { ...pkg.publishConfig, registry: "https://npm.pkg.github.com" };
             fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
           '
+
+      - name: Publish
+        run: |
           echo "//npm.pkg.github.com/:_authToken=${GH_TOKEN}" >> ~/.npmrc
           npm publish
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Create GitHub Release
+      # GitHub Packages ships scoped npm packages as PRIVATE, so publish alone
+      # does not make it installable by anyone else. The REST endpoint takes the
+      # unscoped name for npm, but tolerate either form and warn rather than fail
+      # the release over a visibility toggle.
+      - name: Make package public
+        run: |
+          for name in "theoldllm-provider" "%40srah%2Ftheoldllm-provider"; do
+            if gh api --method PATCH "/user/packages/npm/${name}" -f visibility=public; then
+              echo "visibility set to public"
+              exit 0
+            fi
+          done
+          echo "::warning::Could not set package visibility automatically. Set @srah/theoldllm-provider to Public in Settings -> Packages."
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Runs when at least one registry got the version; a total failure releases
+    # nothing.
+    needs: [publish-npm, publish-gh]
+    if: ${{ !cancelled() && (needs.publish-npm.result == 'success' || needs.publish-gh.result == 'success') }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Build release archive
+        run: |
+          name="theoldllm-provider-${GITHUB_REF_NAME}.zip"
+          zip -r "$name" dist package.json README.md LICENSE
+          echo "ASSET=$name" >> "$GITHUB_ENV"
+
+      - name: Create release
         run: |
           gh release create "$GITHUB_REF_NAME" "$ASSET" \
             --title "v${GITHUB_REF_NAME#v}" \

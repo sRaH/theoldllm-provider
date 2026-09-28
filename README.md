@@ -175,7 +175,9 @@ Pushing a `v*` tag runs [`.github/workflows/publish.yml`](.github/workflows/publ
 
 npmjs.com publishes via **npm Trusted Publishing (OIDC)** — there is no npm token in the workflow or in repository secrets. npm exchanges a short-lived credential scoped to this exact workflow, and generates provenance automatically. GitHub Packages uses the workflow's own `GITHUB_TOKEN` under `packages: write`, so it needs no secret either.
 
-The package is published under two different scopes — `@srah_x64/theoldllm-provider` on npmjs and `@srah/theoldllm-provider` on GitHub Packages. The workflow rewrites the `name` and `publishConfig.registry` between the two publishes; nothing else differs.
+The two registries publish as **independent parallel jobs**, so a failure in one cannot silently cancel the other. The GitHub Release runs when at least one of them succeeded.
+
+The package is published under two different scopes — `@srah_x64/theoldllm-provider` on npmjs and `@srah/theoldllm-provider` on GitHub Packages. The GitHub Packages job rewrites the `name` and `publishConfig.registry`; nothing else differs. Because GitHub Packages ships scoped npm packages as **private**, that job also flips the package to public after publishing.
 
 The tag must match `version` in `package.json`; the job fails otherwise rather than publishing a mislabelled package.
 
