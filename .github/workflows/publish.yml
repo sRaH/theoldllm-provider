@@ -1,8 +1,13 @@
 name: Publish
 
-# Pushing a `v*` tag releases to both registries and attaches a built .zip to a
+# Pushing a `v*` tag publishes to both registries and attaches a built .zip to a
 # GitHub Release. The tag must match `version` in package.json — the job fails
 # otherwise rather than publishing a mislabelled package.
+#
+# npmjs.com uses npm Trusted Publishing (OIDC). There is no npm token anywhere in
+# this workflow: npm CLI detects the OIDC environment and exchanges a short-lived
+# publish credential for this exact workflow. Provenance is generated
+# automatically by that path, so no --provenance flag is passed.
 #
 # The package is published under two different scopes, one per registry:
 #   npmjs.com             @srah_x64/theoldllm-provider
@@ -25,10 +30,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 24 is required: trusted publishing needs npm CLI >= 11.5.1, and the
+      # npm bundled with Node 22 is too old. Caching is deliberately off for
+      # release builds.
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
+          node-version: 24
+
+      - name: Check npm supports OIDC
+        run: |
+          node --version
+          npm --version
+          node -e '
+            const [major, minor] = require("child_process").execSync("npm --version").toString().trim().split(".").map(Number);
+            if (major < 11 || (major === 11 && minor < 5)) {
+              console.error(`::error::npm ${major}.${minor} is too old for trusted publishing; need >= 11.5.1`);
+              process.exit(1);
+            }
+          '
 
       - run: npm ci
 
@@ -59,12 +78,9 @@ jobs:
           zip -r "$name" dist package.json README.md LICENSE
           echo "ASSET=$name" >> "$GITHUB_ENV"
 
+      # Authenticates by OIDC. No token is read from secrets or written to .npmrc.
       - name: Publish to npm
-        run: |
-          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
-          npm publish --provenance --access public
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
 
       - name: Publish to GitHub Packages
         run: |

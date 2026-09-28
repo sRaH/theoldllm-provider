@@ -173,7 +173,9 @@ A few behaviours are worth knowing while testing:
 
 Pushing a `v*` tag runs [`.github/workflows/publish.yml`](.github/workflows/publish.yml), which typechecks, builds, verifies, publishes to **both** registries, and attaches `theoldllm-provider-<tag>.zip` (built `dist/`, `package.json`, `README.md`, `LICENSE`) to a GitHub Release.
 
-The package is published under two different scopes — `@srah_x64/theoldllm-provider` on npmjs and `@srah/theoldllm-provider` on GitHub Packages. The workflow rewrites the `name` and `publishConfig.registry` between the two publishes; nothing else differs. npm gets `--provenance`; GitHub Packages uses the workflow's own `GITHUB_TOKEN` under `packages: write`, so it needs no extra secret.
+npmjs.com publishes via **npm Trusted Publishing (OIDC)** — there is no npm token in the workflow or in repository secrets. npm exchanges a short-lived credential scoped to this exact workflow, and generates provenance automatically. GitHub Packages uses the workflow's own `GITHUB_TOKEN` under `packages: write`, so it needs no secret either.
+
+The package is published under two different scopes — `@srah_x64/theoldllm-provider` on npmjs and `@srah/theoldllm-provider` on GitHub Packages. The workflow rewrites the `name` and `publishConfig.registry` between the two publishes; nothing else differs.
 
 The tag must match `version` in `package.json`; the job fails otherwise rather than publishing a mislabelled package.
 
@@ -182,7 +184,11 @@ npm version patch        # bumps and tags
 git push --follow-tags
 ```
 
-Requires an `NPM_TOKEN` repository secret for npmjs.com. Continuous integration (`.github/workflows/ci.yml`) runs the same typecheck, build, verify and an `npm pack --dry-run` on every push and pull request.
+Trusted publishing needs the publisher configured on npmjs.com under the package's **Settings → Trusted Publisher**, with the organization `sRaH`, repository `theoldllm-provider`, and workflow filename `publish.yml`. npm CLI ≥ 11.5.1 is required (the workflow pins Node 24 and checks the npm version), and GitHub-hosted runners only — self-hosted runners are not supported.
+
+Note that trusted publishers created after **Sep 03, 2026** default to allowing `npm stage publish` only. For an unattended release you must also tick `npm publish` under **Allowed actions**, otherwise the publish step fails and every release needs a manual 2FA approval.
+
+Continuous integration (`.github/workflows/ci.yml`) runs the same typecheck, build, verify and an `npm pack --dry-run` on every push and pull request.
 
 ## License
 
