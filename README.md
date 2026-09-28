@@ -11,14 +11,29 @@ Add the package to `plugins` in `opencode.json(c)`. OpenCode resolves and instal
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["@srah/theoldllm-provider"]
+  "plugins": ["@srah_x64/theoldllm-provider"]
 }
 ```
 
-Pin a version with `@srah/theoldllm-provider@0.1.0` if you want to control upgrades. Then restart the service so the provider is picked up:
+Pin a version with `@srah_x64/theoldllm-provider@0.1.0` if you want to control upgrades. Then restart the service so the provider is picked up:
 
 ```sh
 opencode service restart
+```
+
+### Registries
+
+The same code is published to both registries under different scopes:
+
+| Registry | Package | Install note |
+| --- | --- | --- |
+| npmjs.com | `@srah_x64/theoldllm-provider` | Works as-is. |
+| GitHub Packages | `@srah/theoldllm-provider` | Needs an `.npmrc` scope line and a GitHub token with `read:packages`. |
+
+```ini
+# ~/.npmrc — only needed for GitHub Packages
+@srah:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN
 ```
 
 ## Connect
@@ -156,7 +171,9 @@ A few behaviours are worth knowing while testing:
 
 ## Releasing
 
-Pushing a `v*` tag runs [`.github/workflows/publish.yml`](.github/workflows/publish.yml), which typechecks, builds, verifies, publishes to npm with provenance, and attaches `theoldllm-provider-<tag>.zip` (built `dist/`, `package.json`, `README.md`, `LICENSE`) to a GitHub Release.
+Pushing a `v*` tag runs [`.github/workflows/publish.yml`](.github/workflows/publish.yml), which typechecks, builds, verifies, publishes to **both** registries, and attaches `theoldllm-provider-<tag>.zip` (built `dist/`, `package.json`, `README.md`, `LICENSE`) to a GitHub Release.
+
+The package is published under two different scopes — `@srah_x64/theoldllm-provider` on npmjs and `@srah/theoldllm-provider` on GitHub Packages. The workflow rewrites the `name` and `publishConfig.registry` between the two publishes; nothing else differs. npm gets `--provenance`; GitHub Packages uses the workflow's own `GITHUB_TOKEN` under `packages: write`, so it needs no extra secret.
 
 The tag must match `version` in `package.json`; the job fails otherwise rather than publishing a mislabelled package.
 
@@ -165,7 +182,7 @@ npm version patch        # bumps and tags
 git push --follow-tags
 ```
 
-Requires an `NPM_TOKEN` repository secret. Continuous integration (`.github/workflows/ci.yml`) runs the same typecheck, build, verify and an `npm pack --dry-run` on every push and pull request.
+Requires an `NPM_TOKEN` repository secret for npmjs.com. Continuous integration (`.github/workflows/ci.yml`) runs the same typecheck, build, verify and an `npm pack --dry-run` on every push and pull request.
 
 ## License
 

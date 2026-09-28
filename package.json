@@ -1,5 +1,5 @@
 {
-  "name": "@srah/theoldllm-provider",
+  "name": "@srah_x64/theoldllm-provider",
   "version": "0.1.0",
   "description": "OpenCode v2 provider plugin for TheOldLLM's OpenAI-compatible API — model metadata, cost multipliers, reasoning variants, and daily quota tracking",
   "keywords": [

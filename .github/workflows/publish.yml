@@ -1,8 +1,13 @@
 name: Publish
 
-# Pushing a `v*` tag releases to npm and attaches a built .zip to a GitHub
-# Release. The tag must match `version` in package.json — the job fails
+# Pushing a `v*` tag releases to both registries and attaches a built .zip to a
+# GitHub Release. The tag must match `version` in package.json — the job fails
 # otherwise rather than publishing a mislabelled package.
+#
+# The package is published under two different scopes, one per registry:
+#   npmjs.com             @srah_x64/theoldllm-provider
+#   GitHub Packages       @srah/theoldllm-provider
+# The name is rewritten between the two publishes; nothing else differs.
 
 on:
   push:
@@ -10,21 +15,19 @@ on:
 
 permissions:
   contents: write
+  packages: write
   id-token: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      NPM_PROVENANCE: ${{ github.repository_owner == 'sRaH' }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
           cache: npm
 
       - run: npm ci
@@ -48,16 +51,34 @@ jobs:
       - name: Verify plugin shape
         run: npm run verify
 
-      - name: Publish to npm
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
+      # Packed before the GitHub Packages rename below, so the archive carries
+      # the canonical npmjs name rather than the @srah one.
       - name: Build release archive
         run: |
           name="theoldllm-provider-${GITHUB_REF_NAME}.zip"
           zip -r "$name" dist package.json README.md LICENSE
           echo "ASSET=$name" >> "$GITHUB_ENV"
+
+      - name: Publish to npm
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
+          npm publish --provenance --access public
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish to GitHub Packages
+        run: |
+          node -e '
+            const fs = require("fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            pkg.name = "@srah/theoldllm-provider";
+            pkg.publishConfig = { ...pkg.publishConfig, registry: "https://npm.pkg.github.com" };
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+          '
+          echo "//npm.pkg.github.com/:_authToken=${GH_TOKEN}" >> ~/.npmrc
+          npm publish
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Create GitHub Release
         run: |
